@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swarm Relay — Mission Playback</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0F14;
+    --panel: #131A22;
+    --panel-2: #0F151C;
+    --border: #202A35;
+    --grid: #16202B;
+    --text: #E7EDF3;
+    --text-dim: #7E8CA0;
+    --text-faint: #4C596B;
+    --surveyor: #5AA9FF;
+    --relay: #F2B84B;
+    --idle: #46536A;
+    --rth: #B98CFF;
+    --connected: #35D28A;
+    --disconnected: #FF6B6B;
+    --failed: #FF3B3B;
+    --backbone: #F2B84B;
+    --prio1: #5AA9FF;
+    --prio2: #F2B84B;
+    --prio3: #FF6B6B;
+    --font-ui: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--font-ui);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #app { display: flex; flex-direction: column; height: 100%; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: var(--panel-2); flex-wrap: wrap; gap: 10px;
+  }
+  header .title { display: flex; flex-direction: column; gap: 2px; }
+  header .title h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+  header .title .sub { font-size: 12px; color: var(--text-dim); font-family: var(--font-mono); }
+  header .clock {
+    font-family: var(--font-mono); font-size: 28px; font-weight: 600;
+    letter-spacing: 1px; color: var(--connected);
+  }
+  header .clock .cap { font-size: 13px; color: var(--text-faint); font-weight: 400; margin-left: 6px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-family: var(--font-mono); font-size: 12px; padding: 5px 10px;
+    border-radius: 4px; border: 1px solid var(--border); background: var(--panel);
+    display: flex; gap: 6px; align-items: baseline; white-space: nowrap;
+  }
+  .badge .label { color: var(--text-faint); }
+  .badge .val { color: var(--text); font-weight: 600; }
+  .badge.warn .val { color: var(--relay); }
+  .badge.bad .val { color: var(--disconnected); }
+  .badge.good .val { color: var(--connected); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #mapwrap { flex: 1; position: relative; background: var(--bg); min-width: 0; }
+  #mapcanvas { display: block; width: 100%; height: 100%; }
+
+  aside {
+    width: 300px; flex-shrink: 0; border-left: 1px solid var(--border);
+    background: var(--panel); display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-section { border-bottom: 1px solid var(--border); }
+  .panel-section h2 {
+    font-size: 11px; font-weight: 600; color: var(--text-faint);
+    letter-spacing: 0.6px; margin: 0; padding: 10px 14px 8px;
+  }
+  .legend { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  #fleet { padding: 0 8px 10px; overflow-y: auto; max-height: 200px; font-family: var(--font-mono); font-size: 11px; }
+  .uav-row { display: grid; grid-template-columns: 26px 60px 1fr 34px; gap: 6px; align-items: center; padding: 2px 6px; border-radius: 3px; }
+  .uav-row .dot { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
+  .uav-row .st { color: var(--text-dim); }
+  .battery-bar { height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+  .battery-fill { height: 100%; background: var(--connected); }
+
+  #events { flex: 1; overflow-y: auto; padding: 0 14px 12px; font-family: var(--font-mono); font-size: 11px; min-height: 0; }
+  .event-row { padding: 3px 0; color: var(--text-dim); border-bottom: 1px dotted var(--panel-2); }
+  .event-row .t { color: var(--text-faint); margin-right: 6px; }
+  .event-row.reported { color: var(--connected); }
+  .event-row.late { color: var(--relay); }
+  .event-row.failure { color: var(--disconnected); }
+  .event-row.dropped { color: var(--relay); }
+
+  footer {
+    border-top: 1px solid var(--border); background: var(--panel-2);
+    padding: 10px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  button#playbtn {
+    font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+    background: var(--surveyor); color: #051019; border: none; border-radius: 5px;
+    padding: 8px 16px; cursor: pointer;
+  }
+  button#playbtn:hover { filter: brightness(1.1); }
+  #scrub { flex: 1; accent-color: var(--surveyor); min-width: 120px; }
+  #timelabel { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); min-width: 108px; text-align: right; }
+  select#speed {
+    font-family: var(--font-mono); font-size: 12px; background: var(--panel);
+    color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px;
+  }
+
+  @media (max-width: 760px) {
+    aside { display: none; }
+    header .clock { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title">
+      <h1>Swarm Relay — Mission Playback</h1>
+      <div class="sub" id="runmeta">—</div>
+    </div>
+    <div class="clock"><span id="clockval">00:00</span><span class="cap">/ 45:00</span></div>
+    <div class="badges">
+      <div class="badge" id="b-surveyed"><span class="label">SURVEYED</span><span class="val">0/0</span></div>
+      <div class="badge" id="b-reported"><span class="label">REPORTED</span><span class="val">0/0</span></div>
+      <div class="badge" id="b-alive"><span class="label">ALIVE</span><span class="val">0/0</span></div>
+      <div class="badge" id="b-connected"><span class="label">LINKED</span><span class="val">0</span></div>
+      <div class="badge" id="b-collisions"><span class="label">COLLISIONS</span><span class="val">0</span></div>
+    </div>
+  </header>
+  <main>
+    <div id="mapwrap"><canvas id="mapcanvas"></canvas></div>
+    <aside>
+      <div class="panel-section">
+        <h2>LEGEND</h2>
+        <div class="legend">
+          <div class="legend-row"><span class="swatch" style="background:var(--surveyor)"></span>Surveyor</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--relay)"></span>Relay</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--idle)"></span>Idle / charging</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--rth)"></span>Returning home</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--failed)"></span>Failed</div>
+          <div class="legend-row"><span class="swatch" style="border:2px solid var(--connected); background:transparent"></span>Connected to GCS</div>
+          <div class="legend-row"><span class="swatch" style="border:2px solid var(--disconnected); background:transparent"></span>Disconnected</div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h2>FLEET</h2>
+        <div id="fleet"></div>
+      </div>
+      <div class="panel-section" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+        <h2>EVENT LOG</h2>
+        <div id="events"></div>
+      </div>
+    </aside>
+  </main>
+  <footer>
+    <button id="playbtn">▶ Play</button>
+    <input type="range" id="scrub" min="0" max="0" value="0" step="1">
+    <span id="timelabel">t = 0s / 0s</span>
+    <select id="speed">
+      <option value="5">5×</option>
+      <option value="10">10×</option>
+      <option value="20" selected>20×</option>
+      <option value="50">50×</option>
+      <option value="100">100×</option>
+    </select>
+  </footer>
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+
+const meta = DATA.meta;
+const frames = DATA.frames; // [t, uavs[], pois[], backbone[]]
+const events = DATA.events; // [t, text]
+const poiEvents = DATA.poi_events;
+const summary = DATA.summary;
+
+const STATE = meta.state_legend;   // code -> name
+const ROLE = meta.role_legend;
+const POISTAT = meta.poi_status_legend;
+
+const STATE_COLOR = {
+  IDLE: 'var(--idle)', TRANSIT: null /* resolved by role below */,
+  SURVEYING: 'var(--surveyor)', AWAITING_REPORT: 'var(--surveyor)',
+  RELAYING: 'var(--relay)', RTH: 'var(--rth)', CHARGING: 'var(--idle)',
+  FAILED: 'var(--failed)'
+};
+function colorFor(stateCode, roleCode) {
+  const state = STATE[stateCode], role = ROLE[roleCode];
+  if (state === 'FAILED') return getCss('--failed');
+  if (state === 'RTH') return getCss('--rth');
+  if (state === 'CHARGING' || state === 'IDLE') return getCss('--idle');
+  if (role === 'RELAY') return getCss('--relay');
+  if (role === 'SURVEYOR') return getCss('--surveyor');
+  return getCss('--idle');
+}
+let _cssCache = {};
+function getCss(varName) {
+  if (!_cssCache[varName]) {
+    _cssCache[varName] = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+  return _cssCache[varName];
+}
+
+// ---- world <-> canvas transform ----
+const gcs = meta.gcs;
+const [opMin, opMax] = meta.op_area;
+const [geoMin, geoMax] = meta.geofence;
+const wx0 = geoMin[0] - 40, wy0 = geoMin[1] - 40;
+const wx1 = geoMax[0] + 40, wy1 = geoMax[1] + 40;
+const worldW = wx1 - wx0, worldH = wy1 - wy0;
+
+const canvas = document.getElementById('mapcanvas');
+const ctx = canvas.getContext('2d');
+let scale = 1, offX = 0, offY = 0, dpr = 1;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  const sx = (rect.width - 20) / worldW, sy = (rect.height - 20) / worldH;
+  scale = Math.min(sx, sy);
+  offX = (rect.width - worldW * scale) / 2 - wx0 * scale;
+  offY = (rect.height - worldH * scale) / 2 - wy0 * scale;
+  draw();
+}
+function toPx(x, y) {
+  // flip Y so +y (north in world coords) draws upward on screen
+  return [offX + x * scale, canvas.height / dpr - (offY + y * scale)];
+}
+window.addEventListener('resize', resize);
+
+// ---- static background ----
+function drawStatic() {
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+  // grid
+  ctx.strokeStyle = getCss('--grid');
+  ctx.lineWidth = 1;
+  for (let gx = Math.ceil(wx0 / 100) * 100; gx <= wx1; gx += 100) {
+    const [px] = toPx(gx, 0);
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height / dpr); ctx.stroke();
+  }
+  for (let gy = Math.ceil(wy0 / 100) * 100; gy <= wy1; gy += 100) {
+    const [, py] = toPx(0, gy);
+    ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(canvas.width / dpr, py); ctx.stroke();
+  }
+
+  // geofence (dotted, faint)
+  strokeRect(geoMin, geoMax, getCss('--text-faint'), [2, 4], 1);
+  // operational area (dashed)
+  strokeRect(opMin, opMax, getCss('--text-dim'), [6, 4], 1.4);
+
+  // GCS comm-range ring
+  const [gx0, gy0] = toPx(gcs[0], gcs[1]);
+  ctx.beginPath();
+  ctx.arc(gx0, gy0, meta.comm_range * scale, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(90,169,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // GCS marker
+  ctx.beginPath();
+  const r = 8;
+  ctx.moveTo(gx0, gy0 - r); ctx.lineTo(gx0 + r, gy0); ctx.lineTo(gx0, gy0 + r); ctx.lineTo(gx0 - r, gy0);
+  ctx.closePath();
+  ctx.fillStyle = getCss('--surveyor');
+  ctx.fill();
+  ctx.fillStyle = getCss('--text-dim');
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText('GCS', gx0 + 12, gy0 + 4);
+
+  ctx.restore();
+}
+function strokeRect(min, max, color, dash, width) {
+  const [x0, y0] = toPx(min[0], min[1]);
+  const [x1, y1] = toPx(max[0], max[1]);
+  ctx.save();
+  ctx.setLineDash(dash);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+  ctx.restore();
+}
+
+// ---- per-frame draw ----
+let curIdx = 0;
+
+function draw() {
+  drawStatic();
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  const frame = frames[curIdx];
+  const [t, uavs, pois, backbone] = frame;
+
+  // backbone edges
+  ctx.strokeStyle = 'rgba(242,184,75,0.5)';
+  ctx.lineWidth = 1.6;
+  for (const [a, b] of backbone) {
+    const [ax, ay] = toPx(a[0], a[1]), [bx, by] = toPx(b[0], b[1]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+
+  // PoIs (only once revealed)
+  for (const [pid, x, y, statusCode, prio] of pois) {
+    const pe = poiEvents[pid];
+    if (pe && t < pe.reveal_time) continue; // not yet spawned
+    const [px, py] = toPx(x, y);
+    const status = POISTAT[statusCode];
+    const prioColor = prio >= 3 ? getCss('--prio3') : prio === 2 ? getCss('--prio2') : getCss('--prio1');
+    const rad = 5 + prio * 1.5;
+    ctx.beginPath();
+    ctx.arc(px, py, rad, 0, Math.PI * 2);
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = prioColor;
+    ctx.stroke();
+    if (status === 'SURVEYED') {
+      ctx.fillStyle = getCss('--connected');
+      ctx.beginPath(); ctx.arc(px, py, rad - 2.5, 0, Math.PI * 2); ctx.fill();
+    } else if (status === 'ASSIGNED') {
+      ctx.fillStyle = prioColor;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.arc(px, py, rad - 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // UAVs
+  let nAlive = 0, nConnected = 0, nSurveyors = 0, nRelays = 0;
+  for (const [uid, x, y, stateCode, roleCode, alive, conn, batt] of uavs) {
+    if (!alive) {
+      const [px, py] = toPx(x, y);
+      ctx.strokeStyle = getCss('--failed'); ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px - 4, py - 4); ctx.lineTo(px + 4, py + 4);
+      ctx.moveTo(px + 4, py - 4); ctx.lineTo(px - 4, py + 4);
+      ctx.stroke();
+      continue;
+    }
+    nAlive++;
+    if (conn) nConnected++;
+    const role = ROLE[roleCode];
+    if (role === 'SURVEYOR') nSurveyors++;
+    if (role === 'RELAY') nRelays++;
+
+    const [px, py] = toPx(x, y);
+    const col = colorFor(stateCode, roleCode);
+
+    // connectivity ring
+    ctx.beginPath();
+    ctx.arc(px, py, 6.5, 0, Math.PI * 2);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = conn ? getCss('--connected') : getCss('--disconnected');
+    ctx.globalAlpha = conn ? 0.9 : 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // body
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    // low-battery marker
+    if (batt < 15) {
+      ctx.beginPath();
+      ctx.arc(px, py, 2, 0, Math.PI * 2);
+      ctx.fillStyle = getCss('--failed');
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+  updateTelemetry(t, uavs, pois, nAlive, nConnected);
+}
+
+// ---- telemetry panel ----
+function fmtClock(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+}
+function setBadge(id, val, cls) {
+  const el = document.getElementById(id);
+  el.querySelector('.val').textContent = val;
+  el.className = 'badge' + (cls ? ' ' + cls : '');
+}
+function updateTelemetry(t, uavs, pois, nAlive, nConnected) {
+  document.getElementById('clockval').textContent = fmtClock(t);
+  const nSurveyed = pois.filter(p => POISTAT[p[3]] === 'SURVEYED').length;
+  const nReportedSoFar = poiEvents.filter(p => p.report_time !== null && p.report_time <= t).length;
+  setBadge('b-surveyed', `${nSurveyed}/${meta.n_pois}`);
+  setBadge('b-reported', `${nReportedSoFar}/${meta.n_pois}`);
+  setBadge('b-alive', `${nAlive}/${meta.n_uavs}`, nAlive < meta.n_uavs ? 'warn' : 'good');
+  setBadge('b-connected', `${nConnected}`, nConnected === 0 ? 'bad' : 'good');
+  setBadge('b-collisions', summary.collision_count, summary.collision_count > 0 ? 'bad' : 'good');
+
+  document.getElementById('timelabel').textContent =
+    `t = ${Math.floor(t)}s / ${meta.mission_deadline}s`;
+  document.getElementById('scrub').value = curIdx;
+
+  updateFleet(uavs);
+  updateEvents(t);
+}
+
+function updateFleet(uavs) {
+  const el = document.getElementById('fleet');
+  let html = '';
+  for (const [uid, x, y, stateCode, roleCode, alive, conn, batt] of uavs) {
+    const state = STATE[stateCode];
+    const col = alive ? colorFor(stateCode, roleCode) : getCss('--failed');
+    const battColor = batt < 15 ? getCss('--failed') : batt < 40 ? getCss('--relay') : getCss('--connected');
+    html += `<div class="uav-row">
+      <span class="dot" style="background:${col}"></span>
+      <span>UAV${String(uid).padStart(2,'0')}</span>
+      <span class="st">${alive ? state : 'FAILED'}</span>
+      <span class="battery-bar"><span class="battery-fill" style="width:${Math.max(0,batt)}%;background:${battColor}"></span></span>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+let lastEventCount = -1;
+function updateEvents(t) {
+  const el = document.getElementById('events');
+  const visible = events.filter(e => e[0] <= t);
+  if (visible.length === lastEventCount) return;
+  lastEventCount = visible.length;
+  const recent = visible.slice(-60).reverse();
+  el.innerHTML = recent.map(([et, text]) => {
+    let cls = '';
+    if (text.startsWith('poi_reported')) cls = text.includes('LATE') ? 'late' : 'reported';
+    else if (text.startsWith('failure')) cls = 'failure';
+    else if (text.startsWith('task_dropped')) cls = 'dropped';
+    return `<div class="event-row ${cls}"><span class="t">${Math.floor(et)}s</span>${text}</div>`;
+  }).join('');
+}
+
+// ---- playback ----
+let playing = false;
+let lastRealTime = null;
+let simTime = 0;
+let speed = 20;
+
+function findFrameIdx(t) {
+  // frames are sorted by time; linear scan from current is fine at this size
+  let i = curIdx;
+  if (frames[i][0] > t) { while (i > 0 && frames[i][0] > t) i--; }
+  else { while (i < frames.length - 1 && frames[i + 1][0] <= t) i++; }
+  return i;
+}
+
+function tick(nowMs) {
+  if (!playing) return;
+  if (lastRealTime === null) lastRealTime = nowMs;
+  const dtReal = (nowMs - lastRealTime) / 1000;
+  lastRealTime = nowMs;
+  simTime = Math.min(simTime + dtReal * speed, frames[frames.length - 1][0]);
+  curIdx = findFrameIdx(simTime);
+  draw();
+  if (simTime >= frames[frames.length - 1][0]) {
+    playing = false;
+    document.getElementById('playbtn').textContent = '▶ Play';
+    return;
+  }
+  requestAnimationFrame(tick);
+}
+
+document.getElementById('playbtn').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('playbtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) { lastRealTime = null; requestAnimationFrame(tick); }
+});
+document.getElementById('speed').addEventListener('change', (e) => { speed = Number(e.target.value); });
+document.getElementById('scrub').addEventListener('input', (e) => {
+  playing = false;
+  document.getElementById('playbtn').textContent = '▶ Play';
+  curIdx = Number(e.target.value);
+  simTime = frames[curIdx][0];
+  draw();
+});
+
+// ---- init ----
+document.getElementById('scrub').max = frames.length - 1;
+document.getElementById('runmeta').textContent =
+  `seed ${meta.seed} · ${meta.n_uavs} UAVs · ${meta.n_pois} PoIs · comm range ${meta.comm_range}m`;
+resize();
+</script>
+</body>
+</html>
