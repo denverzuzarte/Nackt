@@ -21,17 +21,17 @@ def main():
     ap.add_argument("--out", type=str, default="visualization.html")
     args = ap.parse_args()
 
-    with open(args.data) as f:
+    with open(args.data, encoding="utf-8") as f:
         data_text = f.read()
     # validate it's real JSON before embedding
     json.loads(data_text)
 
-    with open(args.template) as f:
+    with open(args.template, encoding="utf-8") as f:
         template = f.read()
 
     out_html = template.replace("__DATA_JSON__", data_text)
 
-    with open(args.out, "w") as f:
+    with open(args.out, "w", encoding="utf-8") as f:
         f.write(out_html)
 
     size_mb = os.path.getsize(args.out) / (1024 * 1024)
