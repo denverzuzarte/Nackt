@@ -163,7 +163,14 @@ class RelayManager:
                            t - self._edges_computed_at >= MST_RECOMPUTE_INTERVAL)
         owner_set_changed = owner_ids != self._last_owner_ids
         if topology_stale or owner_set_changed:
-            self._current_edge_ids = build_mst(nodes)
+            new_edges = build_mst(nodes)
+            if self._current_edge_ids:
+                old_set = {tuple(sorted((a, b), key=_node_sort_key)) for a, b in self._current_edge_ids}
+                new_set = {tuple(sorted((a, b), key=_node_sort_key)) for a, b in new_edges}
+                reused = len(old_set & new_set)
+                total = max(1, len(new_set))
+                self.events.append((t, f"topology_recompute reused={reused} total={total}"))
+            self._current_edge_ids = new_edges
             self._edges_computed_at = t
             self._last_owner_ids = owner_ids
         # else: keep the same edge (node-id pair) structure, but positions

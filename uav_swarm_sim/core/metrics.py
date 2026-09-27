@@ -5,6 +5,7 @@ summary numbers needed for report §10 (Evaluation & Performance Metrics).
 from __future__ import annotations
 import json
 import csv
+import numpy as np
 from .entities import PoIStatus
 
 
@@ -16,7 +17,8 @@ class MetricsLogger:
         self.charge_violations = []  # (t, uav_id)  -- battery hit 0 while alive
         self.start_time = None
         self.end_time = None
-        self.min_pairwise_distance_ever = None  # tracks EVERY pair's
+        self.min_pairwise_distance_ever = None
+        self.packet_events = []  # tracks EVERY pair's
             # distance each step, not just threshold violations -- see
             # log_pairwise_distance / _min_separation for why this is
             # tracked separately from collision_events.
@@ -35,6 +37,18 @@ class MetricsLogger:
             "n_pois_total": len(pois),
             "n_relays": n_relays,
             "n_surveyors": n_surveyors,
+        })
+
+    def log_packet_tx(self, t, uav_id, pkt_type, delivered, latency_ms, hops, path_losses, snrs):
+        self.packet_events.append({
+            "t": t,
+            "uav_id": uav_id,
+            "pkt_type": pkt_type,
+            "delivered": delivered,
+            "latency_ms": latency_ms,
+            "hops": hops,
+            "path_losses": path_losses,
+            "snrs": snrs,
         })
 
     def log_collision(self, t, id_a, id_b, dist):
@@ -128,6 +142,25 @@ class MetricsLogger:
             round(100 * sum(reconfig_ratios) / len(reconfig_ratios), 1)
             if reconfig_ratios else None)
 
+        # SECTION 10 & 5.1/5.2: Communication Packet & Latency Metrics
+        total_packets = len(self.packet_events)
+        delivered_packets = [p for p in self.packet_events if p["delivered"]]
+        connected_attempts = [p for p in self.packet_events if p["hops"] is not None]
+
+        pdr_mission_pct = round(100.0 * len(delivered_packets) / total_packets, 1) if total_packets else 100.0
+        pdr_connected_pct = round(100.0 * len(delivered_packets) / len(connected_attempts), 1) if connected_attempts else 100.0
+
+        pkt_latencies = [p["latency_ms"] for p in delivered_packets if p["latency_ms"] is not None]
+        packet_latency_mean_ms = round(float(np.mean(pkt_latencies)), 2) if pkt_latencies else None
+        packet_latency_p95_ms = round(float(np.percentile(pkt_latencies, 95)), 2) if pkt_latencies else None
+        packet_latency_max_ms = round(float(np.max(pkt_latencies)), 2) if pkt_latencies else None
+        packet_jitter_ms = round(float(np.std(pkt_latencies)), 2) if len(pkt_latencies) > 1 else 0.0
+
+        all_pl = [pl for p in delivered_packets for pl in p["path_losses"]]
+        all_snr = [snr for p in delivered_packets for snr in p["snrs"]]
+        mean_path_loss_db = round(float(np.mean(all_pl)), 2) if all_pl else None
+        mean_snr_db = round(float(np.mean(all_snr)), 2) if all_snr else None
+
         # COMPETITION SPEC: max 10 s between PoI detection and reporting.
         latencies = [p.report_latency for p in pois if p.report_latency is not None]
         n_detected = sum(1 for p in pois if p.detection_time is not None)
@@ -145,6 +178,14 @@ class MetricsLogger:
                 if connectivity_availability is not None else None
             ),
             "communication_downtime_s": round(communication_downtime_s, 1),
+            "packet_delivery_ratio_pct": pdr_mission_pct,
+            "packet_delivery_ratio_connected_pct": pdr_connected_pct,
+            "packet_latency_mean_ms": packet_latency_mean_ms,
+            "packet_latency_p95_ms": packet_latency_p95_ms,
+            "packet_latency_max_ms": packet_latency_max_ms,
+            "packet_jitter_ms": packet_jitter_ms,
+            "mean_path_loss_db": mean_path_loss_db,
+            "mean_snr_db": mean_snr_db,
             "relay_reallocations": relay_reallocations,
             "relay_preemptions": relay_preemptions,
             "relay_shortages_logged": relay_shortages,

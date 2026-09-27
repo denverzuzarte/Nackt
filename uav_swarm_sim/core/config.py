@@ -80,6 +80,17 @@ ORCA_TIME_HORIZON = 8.0         # s, ORCA look-ahead window (tau). Swept
 # ---------------------------------------------------------------------------
 # Communication model (distance-threshold, Ponda/Swarm-Relays style)
 # ---------------------------------------------------------------------------
+# RF propagation & IEEE 802.11ax link model (Report §5.1 & §5.2)
+RF_CARRIER_FREQ_HZ = 2.4e9       # 2.4 GHz ISM band
+RF_D0 = 1.0                      # Reference distance in meters
+RF_PATH_LOSS_EXPONENT = 2.0      # n = 2.0 (free space aerial LOS)
+RF_REFERENCE_LOSS_DB = 40.046    # PL(d0) = 20*log10(4*pi*d0*f/c) in dB
+RF_TX_POWER_DBM = 16.0           # P_tx in dBm (~40 mW)
+RF_TX_GAIN_DBI = 2.0             # G_tx in dBi
+RF_RX_GAIN_DBI = 2.0             # G_rx in dBi
+RF_NOISE_FLOOR_DBM = -94.0       # Thermal noise + 7 dB NF over 20 MHz
+RF_RX_SENSITIVITY_DBM = -82.0    # Sensitivity threshold for MCS0 (BPSK 1/2)
+
 COMM_RANGE = 100.0              # m -- COMPETITION SPEC: max comm range
 COMM_SAFE = 75.0                 # m, "safe zone" -- reliable, no action needed
 COMM_CRITICAL = 90.0             # m, "critical zone" -- link degrading

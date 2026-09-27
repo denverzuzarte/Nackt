@@ -230,6 +230,17 @@ class Simulation:
             else:
                 u.time_disconnected += cfg.DT
 
+        # Periodic telemetry/heartbeat packets (1 Hz) for active UAVs
+        if int(round(self.t / cfg.DT)) % int(round(1.0 / cfg.DT)) == 0:
+            for u in self.uavs:
+                if u.alive and u.role in (UAVRole.SURVEYOR, UAVRole.RELAY):
+                    if u.connected_to_gcs:
+                        path = comm.find_path_to_gcs(nodes, u.id)
+                        deliv, lat_ms, hops, pls, snrs = comm.evaluate_path_metrics(nodes, path, pkt_size_bytes=128)
+                        self.metrics.log_packet_tx(self.t, u.id, "telemetry", deliv, lat_ms, hops, pls, snrs)
+                    else:
+                        self.metrics.log_packet_tx(self.t, u.id, "telemetry", False, None, None, [], [])
+
     def _update_poi_reporting(self):
         """COMPETITION SPEC: max 10 s between PoI detection and reporting
         to GCS. A PoI is "reported" the first moment after detection that
@@ -238,6 +249,13 @@ class Simulation:
             if p.detection_time is not None and p.report_time is None:
                 uav = self.uavs[p.detecting_uav_id]
                 if uav.alive and uav.connected_to_gcs:
+                    nodes = {"GCS": GCS_POS}
+                    for u_node in self.uavs:
+                        if u_node.alive:
+                            nodes[u_node.id] = u_node.pos
+                    path = comm.find_path_to_gcs(nodes, uav.id)
+                    deliv, lat_ms, hops, pls, snrs = comm.evaluate_path_metrics(nodes, path, pkt_size_bytes=512)
+                    self.metrics.log_packet_tx(self.t, uav.id, "poi_report", deliv, lat_ms, hops, pls, snrs)
                     p.report_time = self.t
                     if uav.state == UAVState.AWAITING_REPORT:
                         self._release_after_report(uav)
@@ -247,6 +265,7 @@ class Simulation:
         for a in range(len(alive)):
             for b in range(a + 1, len(alive)):
                 d = alive[a].distance_to(alive[b].pos)
+                self.metrics.log_pairwise_distance(d)
                 if d < cfg.UAV_MIN_SEPARATION:
                     self.metrics.log_collision(self.t, alive[a].id, alive[b].id, d)
         lo = cfg.GEOFENCE_MIN
